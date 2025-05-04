@@ -35,7 +35,7 @@ int driveTrainIndex[2][2] = { { 3, 4 }, { 1, 2 } };  // sol, sag (ön, arka)
 int leftMotorsIndex[2] = { driveTrainIndex[0][0], driveTrainIndex[0][1] };
 int rightMotorsIndex[2] = { driveTrainIndex[1][0], driveTrainIndex[1][1] };
 
-const int forwardLeft = 500;
+const int forwardLeft = 550;
 const int forwardRight = forwardLeft + 1023;
 const int backwardsLeft = 1524;
 const int backwardsRight = backwardsLeft - 1023;
@@ -46,13 +46,16 @@ unsigned int yeniZaman;
 unsigned int eskiZaman2 = 0;
 unsigned int yeniZaman2 = 0;
 
+unsigned long turnStartTime;
+bool turningLeft = false;
+
 unsigned long lastRenkOkuma = 0;            // Renk okuma sıklığını sınırlamak için millis.
 unsigned long renkOkumaAraligi = 50; 
 //-----Dynamixel------
 softHalfDuplexSerial port(6);
 dxliR dxlCom(&port);
 //-----Dynamixel End--
-int yesilkapaksayisi = 1;
+int yesilkapaksayisi = 0;
 int istenenkapaksayisi = 0;
 int istenmeyenkapaksayisi = 0;
 int maxistenmeyen = 5;
@@ -81,8 +84,19 @@ byte gelenVeri;
 int switchVal;
 
 int turnLeftDelayed_cagirma = 0;
+bool isCounting = false;
+unsigned long whiteStartMillis;
+
+int ir_sag_wanted = 27;
+int ir_sol_wanted = 25;
+int ir_onSag_wanted = 87;
+int ir_onSol_wanted = 105;
+
+unsigned long startingMillis;
+unsigned long sonRenkOkuma = 0;
 
 void setup() {
+  startingMillis = millis();
 pinMode(switchpin,INPUT);
   Serial.begin(115200);
   /*
@@ -150,6 +164,17 @@ void loop() {
       delay(10);
     }
   }
+/*
+  Serial.print("SÜRE: ");
+  Serial.println((millis() - startingMillis)/1000);
+  if (millis() - startingMillis >= (120)*1000) {
+    Serial.println("ENDGAME");
+
+    ir_sag_wanted = ir_sag_wanted * 8/10;
+    ir_sol_wanted = ir_sol_wanted * 8/10;
+    ir_onSol_wanted = ir_onSol_wanted * 8/10;
+    ir_onSag_wanted = ir_onSag_wanted * 8/10;
+  }*/
 
   robotLogic();
    
@@ -194,30 +219,87 @@ void robotLogic() {
   
   intake();
   mesafeOku();
-  if (ir_sag.distance() < 25) {
-    Serial.println("Sağımda engel görüyorum");
-    Stop();
-    // turnRightTimed(400);
-    turnLeftTimed(400);
-  } else if (ir_onSol.distance() < 80) {
+  if (ir_sag.distance() < 22) {
+    isCounting = false;
+       unsigned long startTimer=millis();
+    bool engelyok=false;
     Serial.println("Önümde engel görüyorum");
     Stop();
-
+  while (millis() - startTimer < 5000) {
     //turnRightTimed(400);
-    turnRightTimed(550);
-  } else if (ir_onSag.distance() < 80) {
+    turnLeftTimed(90);
+    mesafeOku();
+     if (ir_sag.distance() > ir_sag_wanted ) {
+      engelyok = true;
+      break;
+    }
+  }
+  if(!engelyok){
+    Serial.println("Engel hala var,geri gidiyorum biraz.");
+    forwardTimed(300);
+  }
+
+  } else if (ir_onSol.distance() < 80) {
+    isCounting = false;
+    unsigned long startTimer=millis();
+    bool engelyok=false;
     Serial.println("Önümde engel görüyorum");
     Stop();
-    //backwardsTimed(160);
+  while (millis() - startTimer < 5000) {
+    //turnRightTimed(400);
+    turnRightTimed(180);
+    mesafeOku();
+     if (ir_onSol.distance() > ir_onSol_wanted ) {
+      engelyok = true;
+      break;
+    }
+  }
+  if(!engelyok){
+    Serial.println("Engel hala var,geri gidiyorum biraz.");
+    backwardsDelayed();
+  }
 
-    //turnLeftTimed(400);
-    turnLeftTimed(550);
-
-  } else if (ir_sol.distance() < 22) {
-    Serial.println("solumda engel görüyorum");
+  } else if (ir_onSag.distance() < 80) {
+    isCounting = false;
+      unsigned long startTimer=millis();
+    bool engelyok=false;
+    Serial.println("Önümde engel görüyorum");
     Stop();
-    // turnRightTimed(360);
-    turnRightTimed(400);
+  while (millis() - startTimer < 5000) {
+    //turnRightTimed(400);
+    turnLeftTimed(180);
+    mesafeOku();
+     if (ir_onSag.distance() > ir_onSag_wanted ) {
+      engelyok = true;
+      break;
+    }
+  }
+  if(!engelyok){
+    Serial.println("Engel hala var,geri gidiyorum biraz.");
+    backwardsDelayed();
+  }
+
+
+  } else if (ir_sol.distance() < 17) {
+    isCounting = false;
+      unsigned long startTimer=millis();
+    bool engelyok=false;
+    Serial.println("Önümde engel görüyorum");
+    Stop();
+  while (millis() - startTimer < 5000) {
+    //turnRightTimed(400);
+    turnRightTimed(120);
+    mesafeOku();
+     if (ir_sol.distance() >ir_sol_wanted ) {
+      engelyok = true;
+      break;
+    }
+  }
+  if(!engelyok){
+    Serial.println("Engel hala var,geri gidiyorum biraz.");
+    forwardTimed(300);
+  }
+
   } else {
     
         if (startZemin == "blue") {
@@ -295,7 +377,9 @@ else if ((green - blue > 25) && (green - red > 10) && c < 180 && yesilkapaksayis
         Stop();
         // delay(2000);
         mesafeOku();
-        if (dis_sag < 220) {  // Sağ taraf yaklaştıysa, zeminde
+        if (dis_sag < 220) { 
+            // Sensörleri her 50 ms'de bir kontrol et
+        unsigned long turnStartTime = millis(); // Sağ taraf yaklaştıysa, zeminde
           unsigned long previousMillis = millis();
           const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
 
@@ -306,12 +390,15 @@ else if ((green - blue > 25) && (green - red > 10) && c < 180 && yesilkapaksayis
 
               mesafeOku();  // Sensörleri oku
               turnLeft();   // Sürekli dön
-
-              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
+            if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }
+              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 70 or ir_sol.distance() < 70  )) {
                 Stop();
                 greenBagajOpen();
                 yesilkapaksayisi = 0;
-                forwardTimed(550);
+                forwardTimed(350);
                 greenBagajClosed();
                 break;  // İş bitince while'dan çık
               }
@@ -319,17 +406,23 @@ else if ((green - blue > 25) && (green - red > 10) && c < 180 && yesilkapaksayis
           }
         } else {// Sol taraf duvara daha yakınsa
           unsigned long previousMillis = millis();
-          const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
+          const unsigned long interval = 50;
+          unsigned long turnStartTime = millis();   // Sensörleri her 50 ms'de bir kontrol et
 
           while (true) {
             unsigned long currentMillis = millis();
+            
             if (currentMillis - previousMillis >= interval) {
               previousMillis = currentMillis;
 
               mesafeOku();  // Sensörleri oku
               turnRight();  // Sürekli dön
+               if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }
 
-              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
+              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 70 or ir_sol.distance() < 70  )) {
                 Stop();
                 greenBagajOpen();
                 yesilkapaksayisi = 0;
@@ -341,7 +434,7 @@ else if ((green - blue > 25) && (green - red > 10) && c < 180 && yesilkapaksayis
           }
         }
       }
-else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapaksayisi > 0) {
+else if (((blue-green>-7)&&(blue-green <15))&&(blue-red>-7)&&(blue-red<16)  && c < 150 && istenenkapaksayisi > 0) {
         zemin = "Blue";
         Stop();
         forwardTimed(100);
@@ -352,6 +445,7 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
         // delay(2000);
         mesafeOku();
         if (dis_sag < 220) {  // Sağ taraf yaklaştıysa, zeminde
+        unsigned long turnStartTime = millis(); // Sağ taraf yaklaştıysa, zeminde
           unsigned long previousMillis = millis();
           const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
 
@@ -360,11 +454,13 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
             if (currentMillis - previousMillis >= interval) {
               previousMillis = currentMillis;
 
-              mesafeOku();
-              // Sensörleri oku
-              turnLeft();  // Sürekli dön
-
-              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
+              mesafeOku();  // Sensörleri oku
+              turnLeft();   // Sürekli dön
+            if (millis() - turnStartTime > 8000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }
+              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 70 or ir_sol.distance() < 70  )) {
                 Stop();
                 istenenBagajOpen();
                 istenenkapaksayisi = 0;
@@ -376,21 +472,27 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
           }
         } else {//Sol taraf duvara daha yakınsa
           unsigned long previousMillis = millis();
-          const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
+          const unsigned long interval = 50;
+          unsigned long turnStartTime = millis();   // Sensörleri her 50 ms'de bir kontrol et
 
           while (true) {
             unsigned long currentMillis = millis();
+            
             if (currentMillis - previousMillis >= interval) {
               previousMillis = currentMillis;
 
               mesafeOku();  // Sensörleri oku
               turnRight();  // Sürekli dön
+               if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }  // Sürekli dön
 
-              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
+              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 70 or ir_sol.distance() < 70  )) {
                 Stop();
                 istenenBagajOpen();
                 istenenkapaksayisi = 0;
-                forwardTimed(750);
+                forwardTimed(350);
                 istenenBagajClosed();
                 break;  // İş bitince while'dan çık
               }
@@ -407,19 +509,22 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
         istenmeyenBagajClosed();
         frontDoorOpen();
       }
-       frontDoorOpen();
+
+      frontDoorOpen();
         frontHolderClosed();
         backHolderClosed();
         forward();
         mesafeOku();
         renkOku();
         color = "White";
+       
       }
         
   }  
   else{// Kırmızı zeminse
   renkOku();
      if ((red - green > 90) && (red - blue > 95) && c > 320) {
+      isCounting = false;
         color = "Red";
         frontDoorClosed();
         Stop();
@@ -447,6 +552,7 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
 
       }
       else if ((green - blue > 25) && (green - red > 10) && c > 180) {
+        isCounting = false;
         color = "Green";
         Serial.println("yesil pul");
         frontDoorClosed();
@@ -472,6 +578,7 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
         }
       }
       else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25) && c > 220) {
+        isCounting = false;
         color = "Blue";
         frontDoorClosed();
         Stop();
@@ -486,6 +593,7 @@ else if ((blue-green>5)&&(blue-red>-7)&&(blue-red<25)  && c < 220 && istenenkapa
       }
 
 else if ((green - blue > 25) && (green - red > 10) && c < 120 && yesilkapaksayisi > 0) {
+  isCounting = false;
         zemin = "Green";
         Stop();
         Serial.println("Green Zemin");
@@ -495,8 +603,8 @@ forwardTimed(100);
         // delay(2000);
         mesafeOku();
         if (dis_sag < 220) {  // Sağ taraf yaklaştıysa, zeminde
+       unsigned long turnStartTime = millis(); // Sağ taraf yaklaştıysa, zeminde
           unsigned long previousMillis = millis();
-          
           const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
 
           while (true) {
@@ -506,34 +614,43 @@ forwardTimed(100);
 
               mesafeOku();  // Sensörleri oku
               turnLeft();   // Sürekli dön
-
+            if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }
               if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
                 Stop();
                 greenBagajOpen();
                 yesilkapaksayisi = 0;
-                forwardTimed(550);
+                forwardTimed(400);
                 greenBagajClosed();
                 break;  // İş bitince while'dan çık
               }
             }
           }
         } else {// Sol taraf duvara daha yakınsa
-          unsigned long previousMillis = millis();
-          const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
+         unsigned long previousMillis = millis();
+          const unsigned long interval = 50;
+          unsigned long turnStartTime = millis();   // Sensörleri her 50 ms'de bir kontrol et
 
           while (true) {
             unsigned long currentMillis = millis();
+            
             if (currentMillis - previousMillis >= interval) {
               previousMillis = currentMillis;
 
               mesafeOku();  // Sensörleri oku
               turnRight();  // Sürekli dön
+               if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }// Sürekli dön
 
               if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  ))  {
                 Stop();
                 greenBagajOpen();
                 yesilkapaksayisi = 0;
-                forwardTimed(750);
+                forwardTimed(400);
                 greenBagajClosed();
                 break;  // İş bitince while'dan çık
               }
@@ -542,6 +659,7 @@ forwardTimed(100);
         }
       }
     else if ((red - green > 70) && (red - blue > 75) && c < 120 && istenenkapaksayisi>0) {
+      isCounting = false;
         zemin = "Red";
         Stop();
         forwardTimed(100);
@@ -553,29 +671,7 @@ forwardTimed(100);
         // delay(2000);
         mesafeOku();
         if (dis_sag < 220) {  // Sağ taraf yaklaştıysa, zeminde
-          unsigned long previousMillis = millis();
-          const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
-
-          while (true) {
-            unsigned long currentMillis = millis();
-            if (currentMillis - previousMillis >= interval) {
-              previousMillis = currentMillis;
-
-              mesafeOku();
-              // Sensörleri oku
-              turnLeft();  // Sürekli dön
-
-              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
-                Stop();
-                istenenBagajOpen();
-                istenenkapaksayisi = 0;
-                forwardTimed(750);
-                istenenBagajClosed();
-                break;  // İş bitince while'dan çık
-              }
-            }
-          }
-        } else {//Sol taraf duvara daha yakınsa
+        unsigned long turnStartTime = millis(); // Sağ taraf yaklaştıysa, zeminde
           unsigned long previousMillis = millis();
           const unsigned long interval = 50;  // Sensörleri her 50 ms'de bir kontrol et
 
@@ -585,13 +681,44 @@ forwardTimed(100);
               previousMillis = currentMillis;
 
               mesafeOku();  // Sensörleri oku
+              turnLeft();   // Sürekli dön
+            if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                }
+              if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
+                Stop();
+                istenenBagajOpen();
+                istenenkapaksayisi = 0;
+                forwardTimed(400);
+                istenenBagajClosed();
+                break;  // İş bitince while'dan çık
+              }
+            }
+          }
+        } else {//Sol taraf duvara daha yakınsa
+         unsigned long previousMillis = millis();
+          const unsigned long interval = 50;
+          unsigned long turnStartTime = millis();   // Sensörleri her 50 ms'de bir kontrol et
+
+          while (true) {
+            unsigned long currentMillis = millis();
+            
+            if (currentMillis - previousMillis >= interval) {
+              previousMillis = currentMillis;
+
+              mesafeOku();  // Sensörleri oku
               turnRight();  // Sürekli dön
+               if (millis() - turnStartTime > 5000) {  // Eğer 5 saniye geçtiyse
+                    Stop();  // Dönmeyi durdur
+                    break;   // Döngüden çık
+                } // Sürekli dön
 
               if (ir_onSol.distance() > 340 && ir_onSag.distance() > 340 &&(ir_sag.distance() < 65 or ir_sol.distance() < 65  )) {
                 Stop();
                 istenenBagajOpen();
                 istenenkapaksayisi = 0;
-                forwardTimed(750);
+                forwardTimed(400);
                 istenenBagajClosed();
                 break;  // İş bitince while'dan çık
               }
@@ -608,7 +735,33 @@ forwardTimed(100);
         istenmeyenBagajClosed();
         frontDoorOpen();
       }
-       frontDoorOpen();
+
+      /*if (!isCounting) {
+        isCounting = true;
+        whiteStartMillis = millis();
+      }
+      
+      if (millis() - whiteStartMillis >= 7000) {
+        backwardsTimed(100);
+        if (ir_sag.distance() > ir_sol.distance()) {
+          turnRightTimed(400);
+        }
+        else {
+          turnLeftTimed(400);
+        }
+        isCounting = false;
+      }
+
+      else {
+          frontDoorOpen();
+        frontHolderClosed();
+        backHolderClosed();
+        forward();
+        mesafeOku();
+        renkOku();
+        color = "White";
+      }*/
+      frontDoorOpen();
         frontHolderClosed();
         backHolderClosed();
         forward();
@@ -616,6 +769,7 @@ forwardTimed(100);
         renkOku();
         color = "White";
       }
+
 
       }
     
@@ -911,8 +1065,12 @@ void mesafeOku() {
 void renkOku() {
   tcs.setInterrupt(false);  // turn on LED
 
-  tcs.getRGB(&red, &green, &blue);
-  tcs.getRawData(&r, &g, &b, &c);
+  if (millis() - sonRenkOkuma >= 50) {
+    tcs.getRGB(&red, &green, &blue);
+    tcs.getRawData(&r, &g, &b, &c);
+    sonRenkOkuma = millis();
+  }
+  
 
   tcs.setInterrupt(true);  // turn off LED
   
@@ -930,12 +1088,18 @@ void renkOku() {
 
 
 void backwards() {
+  frontDoorClosed();
+  frontHolderLeft();
+  backHolderLeft();
   dxlCom.setMovingSpeed(rightMotorsIndex[0], backwardsRight);
   dxlCom.setMovingSpeed(rightMotorsIndex[1], backwardsRight);
   dxlCom.setMovingSpeed(leftMotorsIndex[0], backwardsLeft);
   dxlCom.setMovingSpeed(leftMotorsIndex[1], backwardsLeft);
 }
 void backwardsDelayed() {
+    frontDoorClosed();
+  frontHolderLeft();
+  backHolderLeft();
   dxlCom.setMovingSpeed(rightMotorsIndex[0], backwardsRight);
   dxlCom.setMovingSpeed(rightMotorsIndex[1], backwardsRight);
   dxlCom.setMovingSpeed(leftMotorsIndex[0], backwardsLeft);
