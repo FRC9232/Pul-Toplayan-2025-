@@ -60,9 +60,9 @@ dxliR dxlCom(&port);
 int yesilkapaksayisi = 0;
 int istenenkapaksayisi = 0;
 int istenmeyenkapaksayisi = 0;
-int maxistenmeyen = 5;
+int maxistenmeyen = 3;
 int maxgreen = 4;
-int maxistenen = 5;
+int maxistenen = 3;
 String startZemin = "blue";
 #define backHolder 8
 #define frontDoor 10
